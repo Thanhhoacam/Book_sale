@@ -1,4 +1,5 @@
-﻿using System;
+﻿using BulkyBook.DataAcess.Data;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,6 +9,7 @@ namespace BulkyBook.DataAccess.Repository.IRepository
 {
     public interface IUnitOfWork
     {
+        public ApplicationDbContext _db { get; }
         ICategoryRepository Category { get; }
         IProductRepository Product { get; }
         IShoppingCartRepository ShoppingCart { get; }

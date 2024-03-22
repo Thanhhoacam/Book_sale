@@ -5,10 +5,15 @@ using BulkyBook.Utility;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json.Serialization;
+using Newtonsoft.Json;
 using Stripe;
 using Stripe.Checkout;
 using System.Diagnostics;
+using System.Net.Http.Headers;
 using System.Security.Claims;
+using System.Text.Json;
+using System.Text;
 
 namespace BulkyBookWeb.Areas.Admin.Controllers {
 	[Area("admin")]
@@ -17,34 +22,78 @@ namespace BulkyBookWeb.Areas.Admin.Controllers {
 
 
 		private readonly IUnitOfWork _unitOfWork;
+        private readonly HttpClient client = null;
+        private string ProductAPIBaseURL = "";
         [BindProperty]
         public OrderVM OrderVM { get; set; }
         public OrderController(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
+            client = new HttpClient();
+            var contentType = new MediaTypeWithQualityHeaderValue("application/json");
+            client.DefaultRequestHeaders.Accept.Add(contentType);
+            ProductAPIBaseURL = "http://localhost:5236/api/Order";
         }
 
-        public IActionResult Index() {
+        public async Task<IActionResult> Index() {
             return View();
         }
 
-        public IActionResult Details(int orderId) {
-            OrderVM = new() {
-                OrderHeader = _unitOfWork.OrderHeader.Get(u => u.Id == orderId, includeProperties: "ApplicationUser"),
-                OrderDetail = _unitOfWork.OrderDetail.GetAll(u => u.OrderHeaderId == orderId, includeProperties: "Product")
+        public async Task<IActionResult> Details(int orderId) {
+            
+            HttpResponseMessage response = await client.GetAsync(ProductAPIBaseURL +"/" + orderId);
+            string stringData = await response.Content.ReadAsStringAsync();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
             };
 
-            return View(OrderVM);
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            OrderVM o = JsonConvert.DeserializeObject<OrderVM>(stringData, settings);
+
+            return View(o);
         }
+
+
         [HttpPost]
         [Authorize(Roles =SD.Role_Admin+","+SD.Role_Employee)]
-        public IActionResult UpdateOrderDetail() {
+        public async Task<IActionResult> UpdateOrderDetail() {
             var orderHeaderFromDb = _unitOfWork.OrderHeader.Get(u => u.Id == OrderVM.OrderHeader.Id);
             orderHeaderFromDb.Name = OrderVM.OrderHeader.Name;
-          
-            _unitOfWork.OrderHeader.Update(orderHeaderFromDb);
-            _unitOfWork.Save();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
 
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            string stringData = JsonConvert.SerializeObject(orderHeaderFromDb, settings);
+            var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL + "/" + OrderVM.OrderHeader.Id, contentData);
+
+            //_unitOfWork.OrderHeader.Update(orderHeaderFromDb);
+            //_unitOfWork.Save();
+            if (response.IsSuccessStatusCode)
             TempData["Success"] = "Order Details Updated Successfully.";
 
 
@@ -54,51 +103,88 @@ namespace BulkyBookWeb.Areas.Admin.Controllers {
 
         [HttpPost]
         [Authorize(Roles = SD.Role_Admin + "," + SD.Role_Employee)]
-        public IActionResult StartProcessing() {
-            _unitOfWork.OrderHeader.UpdateStatus(OrderVM.OrderHeader.Id, SD.StatusInProcess);
-            _unitOfWork.Save();
+        public async Task<IActionResult> StartProcessing() {
+
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
+
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            string stringData = JsonConvert.SerializeObject(OrderVM.OrderHeader, settings);
+            var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL + "/StartProcessing/" + OrderVM.OrderHeader.Id, contentData);
+
             TempData["Success"] = "Order Details Updated Successfully.";
             return RedirectToAction(nameof(Details), new { orderId = OrderVM.OrderHeader.Id });
         }
 
         [HttpPost]
         [Authorize(Roles = SD.Role_Admin + "," + SD.Role_Employee)]
-        public IActionResult ShipOrder() {
+        public async Task<IActionResult> ShipOrder() {
 
             var orderHeader = _unitOfWork.OrderHeader.Get(u => u.Id == OrderVM.OrderHeader.Id);
-           
-            orderHeader.OrderStatus = SD.StatusShipped;
-            orderHeader.ShippingDate = DateTime.Now;
-            if (orderHeader.PaymentStatus == SD.PaymentStatusDelayedPayment) {
-                orderHeader.PaymentDueDate = DateTime.Now.AddDays(30);
-            }
 
-            _unitOfWork.OrderHeader.Update(orderHeader);
-            _unitOfWork.Save();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
+
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            string stringData = JsonConvert.SerializeObject(orderHeader, settings);
+            var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
+
+            HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL + "/ShipOrder/" + OrderVM.OrderHeader.Id, contentData);
+
             TempData["Success"] = "Order Shipped Successfully.";
             return RedirectToAction(nameof(Details), new { orderId = OrderVM.OrderHeader.Id });
         }
         [HttpPost]
         [Authorize(Roles = SD.Role_Admin + "," + SD.Role_Employee)]
-        public IActionResult CancelOrder() {
+        public async Task<IActionResult> CancelOrder() {
 
             var orderHeader = _unitOfWork.OrderHeader.Get(u => u.Id == OrderVM.OrderHeader.Id);
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
 
-            if (orderHeader.PaymentStatus == SD.PaymentStatusApproved) {
-                var options = new RefundCreateOptions {
-                    Reason = RefundReasons.RequestedByCustomer,
-                  
-                };
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
 
-                var service = new RefundService();
-                Refund refund = service.Create(options);
+            string stringData = JsonConvert.SerializeObject(orderHeader, settings);
+            var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
 
-                _unitOfWork.OrderHeader.UpdateStatus(orderHeader.Id, SD.StatusCancelled, SD.StatusRefunded);
-            }
-            else {
-                _unitOfWork.OrderHeader.UpdateStatus(orderHeader.Id, SD.StatusCancelled, SD.StatusCancelled);
-            }
-            _unitOfWork.Save();
+            HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL + "/CancelOrder/" + OrderVM.OrderHeader.Id, contentData);
             TempData["Success"] = "Order Cancelled Successfully.";
             return RedirectToAction(nameof(Details), new { orderId = OrderVM.OrderHeader.Id });
 

@@ -6,8 +6,13 @@ using BulkyBook.Utility;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Rendering;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 using System.Collections.Generic;
 using System.Data;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace BulkyBookWeb.Areas.Admin.Controllers
 {
@@ -17,29 +22,67 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
     {
         private readonly IUnitOfWork _unitOfWork;
         private readonly IWebHostEnvironment _webHostEnvironment;
+        private readonly HttpClient client = null;
+        private string ProductAPIBaseURL = "";
         public ProductController(IUnitOfWork unitOfWork, IWebHostEnvironment webHostEnvironment)
         {
             _unitOfWork = unitOfWork;
             _webHostEnvironment = webHostEnvironment;
+
+           
+         
+
+            client = new HttpClient();
+            var contentType = new MediaTypeWithQualityHeaderValue("application/json");
+            client.DefaultRequestHeaders.Accept.Add(contentType);
+            ProductAPIBaseURL = "http://localhost:5236/api/Product";
         }
-        public IActionResult Index() 
+        public async Task<IActionResult> Index() 
         {
-            List<Product> objProductList = _unitOfWork.Product.GetAll(includeProperties:"Category").ToList();
+            HttpResponseMessage response = await client.GetAsync(ProductAPIBaseURL);
+            string stringData = await response.Content.ReadAsStringAsync();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+
+
+            List<Product> objProductList = System.Text.Json.JsonSerializer.Deserialize<List<Product>>(stringData,options);
            
             return View(objProductList);
         }
 
-        public IActionResult Upsert(int? id)
+        public async Task<IActionResult> Upsert(int? id)
         {
+            HttpResponseMessage response = await client.GetAsync("http://localhost:5236/api/Category");
+            string stringData = await response.Content.ReadAsStringAsync();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
+
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+            List<Category> objCategoryList = System.Text.Json.JsonSerializer.Deserialize<List<Category>>(stringData, options);
             ProductVM productVM = new()
             {
-                CategoryList = _unitOfWork.Category.GetAll().Select(u => new SelectListItem
+                CategoryList = objCategoryList.Select(u => new SelectListItem
                 {
                     Text = u.Name,
                     Value = u.Id.ToString()
                 }),
                 Product = new Product()
             };
+
+
             if (id == null || id == 0)
             {
                 //create
@@ -47,25 +90,55 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
             }
             else
             {
+                HttpResponseMessage response2 = await client.GetAsync("http://localhost:5236/api/Product/"+id);
+                 string stringData2 = await response2.Content.ReadAsStringAsync();
                 //update
-                productVM.Product = _unitOfWork.Product.Get(u=>u.Id==id,includeProperties:"ProductImages");
+                
+
+                // Sử dụng JsonSerializerSettings trong quá trình Serialize/Deserialize
+                var pro = JsonConvert.DeserializeObject<Product>(stringData2, settings);
+                productVM.Product = pro;
+
                 return View(productVM);
             }
             
         }
         [HttpPost]
-        public IActionResult Upsert(ProductVM productVM, List<IFormFile> files)
+        public async Task<IActionResult> Upsert(ProductVM productVM, List<IFormFile> files)
         {
+           
+           
+           
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
+
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            string stringData = JsonConvert.SerializeObject(productVM.Product,settings);
+            var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
             if (ModelState.IsValid)
             {
                 if (productVM.Product.Id == 0) {
-                    _unitOfWork.Product.Add(productVM.Product);
+                    //_unitOfWork.Product.Add(productVM.Product);
+                    HttpResponseMessage response = await client.PostAsync(ProductAPIBaseURL, contentData);
                 }
                 else {
-                    _unitOfWork.Product.Update(productVM.Product);
+                    //_unitOfWork.Product.Update(productVM.Product);
+                    HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL+"/"+ productVM.Product.Id, contentData);
                 }
 
-                _unitOfWork.Save();
+                //_unitOfWork.Save();
 
 
                 string wwwRootPath = _webHostEnvironment.WebRootPath;
@@ -111,7 +184,16 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
             }
             else
             {
-                productVM.CategoryList = _unitOfWork.Category.GetAll().Select(u => new SelectListItem
+                HttpResponseMessage response = await client.GetAsync("http://localhost:5236/api/Category");
+                 stringData = await response.Content.ReadAsStringAsync();
+                 options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+               
+                List<Category> objCategoryList = System.Text.Json.JsonSerializer.Deserialize<List<Category>>(stringData, options);
+               
+                productVM.CategoryList = objCategoryList.Select(u => new SelectListItem
                 {
                     Text = u.Name,
                     Value = u.Id.ToString()
@@ -121,7 +203,7 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
         }
 
 
-        public IActionResult DeleteImage(int imageId) {
+        public async Task<IActionResult> DeleteImage(int imageId) {
             var imageToBeDeleted = _unitOfWork.ProductImage.Get(u => u.Id == imageId);
             int productId = imageToBeDeleted.ProductId;
             if (imageToBeDeleted != null) {
@@ -147,7 +229,7 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
         #region API CALLS
 
         [HttpGet]
-        public IActionResult GetAll()
+        public async Task<IActionResult> GetAll()
         {
             List<Product> objProductList = _unitOfWork.Product.GetAll(includeProperties: "Category").ToList();
             return Json(new { data = objProductList });
@@ -155,7 +237,7 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
 
 
         [HttpDelete]
-        public IActionResult Delete(int? id)
+        public async Task<IActionResult> Delete(int? id)
         {
             var productToBeDeleted = _unitOfWork.Product.Get(u => u.Id == id);
             if (productToBeDeleted == null)
