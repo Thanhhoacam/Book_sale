@@ -33,7 +33,7 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
         public IActionResult RoleManagment(string userId) {
 
             RoleManagmentVM RoleVM = new RoleManagmentVM() {
-                ApplicationUser = _unitOfWork.ApplicationUser.Get(u => u.Id == userId, includeProperties:"Company"),
+                ApplicationUser = _unitOfWork.ApplicationUser.Get(u => u.Id == userId),
                 RoleList = _roleManager.Roles.Select(i => new SelectListItem {
                     Text = i.Name,
                     Value = i.Name

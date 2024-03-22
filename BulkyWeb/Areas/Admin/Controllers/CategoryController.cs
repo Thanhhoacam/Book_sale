@@ -1,9 +1,15 @@
 ﻿using BulkyBook.DataAccess.Repository.IRepository;
 using BulkyBook.DataAcess.Data;
 using BulkyBook.Models;
+using BulkyBook.Models.ViewModels;
 using BulkyBook.Utility;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Newtonsoft.Json.Serialization;
+using Newtonsoft.Json;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
 
 namespace BulkyBookWeb.Areas.Admin.Controllers
 {
@@ -12,22 +18,36 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
     public class CategoryController : Controller
     {
         private readonly IUnitOfWork _unitOfWork;
+        private readonly HttpClient client = null;
+        private string ProductAPIBaseURL = "";
         public CategoryController(IUnitOfWork unitOfWork)
         {
             _unitOfWork = unitOfWork;
+
+            client = new HttpClient();
+            var contentType = new MediaTypeWithQualityHeaderValue("application/json");
+            client.DefaultRequestHeaders.Accept.Add(contentType);
+            ProductAPIBaseURL = "http://localhost:5236/api/Category";
         }
-        public IActionResult Index()
+        public async Task<IActionResult> Index()
         {
-            List<Category> objCategoryList = _unitOfWork.Category.GetAll().ToList();
+            //List<Category> objCategoryList = _unitOfWork.Category.GetAll().ToList();
+            HttpResponseMessage response = await client.GetAsync(ProductAPIBaseURL);
+            string stringData = await response.Content.ReadAsStringAsync();
+            var options = new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            };
+            List<Category> objCategoryList = System.Text.Json.JsonSerializer.Deserialize<List<Category>>(stringData, options);
             return View(objCategoryList);
         }
 
-        public IActionResult Create()
+        public async Task<IActionResult> Create()
         {
             return View();
         }
         [HttpPost]
-        public IActionResult Create(Category obj)
+        public async Task<IActionResult> Create(Category obj)
         {
             if (obj.Name == obj.DisplayOrder.ToString())
             {
@@ -36,8 +56,28 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
 
             if (ModelState.IsValid)
             {
-                _unitOfWork.Category.Add(obj);
-                _unitOfWork.Save();
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+                var contractResolver = new DefaultContractResolver
+                {
+                    NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+                };
+
+                // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+                var settings = new JsonSerializerSettings
+                {
+                    ContractResolver = contractResolver
+                };
+
+                string stringData = JsonConvert.SerializeObject(obj, settings);
+                var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await client.PostAsync(ProductAPIBaseURL, contentData);
+                //_unitOfWork.Category.Add(obj);
+                //_unitOfWork.Save();
                 TempData["success"] = "Category created successfully";
                 return RedirectToAction("Index");
             }
@@ -45,29 +85,66 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
 
         }
 
-        public IActionResult Edit(int? id)
+        public async Task<IActionResult> Edit(int? id)
         {
             if (id == null || id == 0)
             {
                 return NotFound();
             }
-            Category? categoryFromDb = _unitOfWork.Category.Get(u => u.Id == id);
+            //Category? categoryFromDb = _unitOfWork.Category.Get(u => u.Id == id);
             //Category? categoryFromDb1 = _db.Categories.FirstOrDefault(u=>u.Id==id);
             //Category? categoryFromDb2 = _db.Categories.Where(u=>u.Id==id).FirstOrDefault();
 
-            if (categoryFromDb == null)
+            HttpResponseMessage response = await client.GetAsync("http://localhost:5236/api/Category/"+id);
+            string stringData = await response.Content.ReadAsStringAsync();
+            var options = new JsonSerializerOptions
             {
-                return NotFound();
-            }
+                PropertyNameCaseInsensitive = true
+            };
+            // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+            var contractResolver = new DefaultContractResolver
+            {
+                NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+            };
+
+            // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+            var settings = new JsonSerializerSettings
+            {
+                ContractResolver = contractResolver
+            };
+
+            Category categoryFromDb = JsonConvert.DeserializeObject<Category>(stringData, settings);
+
             return View(categoryFromDb);
         }
         [HttpPost]
-        public IActionResult Edit(Category obj)
+        public async Task<IActionResult> Edit(Category obj)
         {
             if (ModelState.IsValid)
             {
-                _unitOfWork.Category.Update(obj);
-                _unitOfWork.Save();
+                var options = new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                };
+                // Cấu hình quy tắc ánh xạ mặc định cho tất cả các đối tượng
+                var contractResolver = new DefaultContractResolver
+                {
+                    NamingStrategy = new CamelCaseNamingStrategy() // Áp dụng các quy tắc đặt tên (ví dụ: CamelCase)
+                };
+
+                // Cấu hình JsonSerializer để sử dụng DefaultContractResolver đã cấu hình
+                var settings = new JsonSerializerSettings
+                {
+                    ContractResolver = contractResolver
+                };
+
+                string stringData = JsonConvert.SerializeObject(obj, settings);
+                var contentData = new StringContent(stringData, Encoding.UTF8, "application/json");
+
+                HttpResponseMessage response = await client.PutAsync(ProductAPIBaseURL + "/" + obj.Id, contentData);
+                //_unitOfWork.Category.Update(obj);
+                //_unitOfWork.Save();
+                if (response.IsSuccessStatusCode)
                 TempData["success"] = "Category updated successfully";
                 return RedirectToAction("Index");
             }
@@ -75,7 +152,7 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
 
         }
 
-        public IActionResult Delete(int? id)
+        public async Task<IActionResult> Delete(int? id)
         {
             if (id == null || id == 0)
             {
@@ -90,15 +167,11 @@ namespace BulkyBookWeb.Areas.Admin.Controllers
             return View(categoryFromDb);
         }
         [HttpPost, ActionName("Delete")]
-        public IActionResult DeletePOST(int? id)
+        public async Task<IActionResult> DeletePOST(int? id)
         {
-            Category? obj = _unitOfWork.Category.Get(u => u.Id == id);
-            if (obj == null)
-            {
-                return NotFound();
-            }
-            _unitOfWork.Category.Remove(obj);
-            _unitOfWork.Save();
+            //Category? obj = _unitOfWork.Category.Get(u => u.Id == id);
+            HttpResponseMessage response = await client.DeleteAsync(ProductAPIBaseURL + "/" + id);
+            if (response.IsSuccessStatusCode)
             TempData["success"] = "Category deleted successfully";
             return RedirectToAction("Index");
         }

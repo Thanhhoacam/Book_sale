@@ -51,12 +51,12 @@ namespace BulkyBook.DataAccess.DbInitializer {
                     UserName = "admin",
                     Email = "admin@gmail.com",
                     Name = "Admin Thanh",
-                    PhoneNumber = "1112223333",
+                    
                    
                 }, "Admin123*").GetAwaiter().GetResult();
 
 
-                ApplicationUser user = _db.ApplicationUsers.FirstOrDefault(u => u.Email == "admin@dotnetmastery.com");
+                ApplicationUser user = _db.ApplicationUsers.FirstOrDefault(u => u.Email == "admin@gmail.com");
                 _userManager.AddToRoleAsync(user, SD.Role_Admin).GetAwaiter().GetResult();
 
             }
